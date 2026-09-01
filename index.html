@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Annakshetra — Coupon Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAF7F1;
+    --surface:#FFFFFF;
+    --line:#E7DFCF;
+    --ink:#2A2118;
+    --ink-soft:#6B6055;
+    --turmeric:#B8791C;
+    --turmeric-deep:#8C5C13;
+    --leaf:#3F5E45;
+    --leaf-soft:#EAF0E9;
+    --chili:#A23B33;
+    --chili-soft:#F6E7E5;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(42,33,24,0.06), 0 6px 20px rgba(42,33,24,0.05);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+
+  h1,h2,h3{font-family:'Fraunces',Georgia,serif; margin:0; letter-spacing:-0.01em;}
+
+  header{
+    padding:28px 20px 0;
+    max-width:960px;
+    margin:0 auto;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+    border-bottom:1px solid var(--line);
+    padding-bottom:18px;
+  }
+  .brand h1{font-size:28px; font-weight:600; color:var(--turmeric-deep);}
+  .brand p{margin:4px 0 0; color:var(--ink-soft); font-size:14px;}
+
+  nav.tabs{
+    display:flex;
+    gap:4px;
+    max-width:960px;
+    margin:18px auto 0;
+    padding:0 20px;
+  }
+  nav.tabs button{
+    font-family:'Inter',sans-serif;
+    font-size:14.5px;
+    font-weight:600;
+    color:var(--ink-soft);
+    background:none;
+    border:none;
+    padding:10px 4px;
+    margin-right:22px;
+    cursor:pointer;
+    border-bottom:2.5px solid transparent;
+  }
+  nav.tabs button.active{
+    color:var(--ink);
+    border-bottom-color:var(--turmeric);
+  }
+
+  main{
+    max-width:960px;
+    margin:0 auto;
+    padding:24px 20px 80px;
+  }
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:24px;
+  }
+
+  /* --- Entry form --- */
+  .form-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px 20px;
+  }
+  .field{display:flex; flex-direction:column; gap:6px;}
+  .field.full{grid-column:1 / -1;}
+  .field label{font-size:13px; font-weight:600; color:var(--ink-soft);}
+  .field input, .field select, .field textarea{
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    padding:10px 12px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:2px solid var(--turmeric);
+    outline-offset:1px;
+    background:var(--surface);
+  }
+  .radio-row{display:flex; gap:10px;}
+  .radio-row label{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:10px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    font-size:14.5px;
+    font-weight:500;
+    cursor:pointer;
+    background:var(--paper);
+  }
+  .radio-row input{accent-color:var(--turmeric);}
+  .radio-row label:has(input:checked){
+    border-color:var(--turmeric);
+    background:#FBF0DD;
+    color:var(--turmeric-deep);
+    font-weight:600;
+  }
+
+  .total-strip{
+    grid-column:1 / -1;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:var(--leaf-soft);
+    border-radius:8px;
+    padding:14px 18px;
+    margin-top:4px;
+  }
+  .total-strip .label{font-size:13px; font-weight:600; color:var(--leaf);}
+  .total-strip .value{font-family:'Fraunces',serif; font-size:26px; font-weight:600; color:var(--leaf);}
+
+  .submit-row{grid-column:1 / -1; display:flex; align-items:center; gap:14px; margin-top:6px;}
+  button.primary{
+    font-family:'Inter',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    color:#fff;
+    background:var(--turmeric);
+    border:none;
+    padding:12px 26px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  button.primary:hover{background:var(--turmeric-deep);}
+  button.primary:disabled{background:#CFC6B6; cursor:default;}
+  .status-msg{font-size:14px; font-weight:500;}
+  .status-msg.ok{color:var(--leaf);}
+  .status-msg.err{color:var(--chili);}
+
+  /* --- Records --- */
+  .records-toolbar{
+    display:flex;
+    align-items:flex-end;
+    gap:14px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .records-toolbar .field{flex:0 0 auto;}
+  .records-toolbar input[type=date]{width:150px;}
+  .ghost-btn{
+    font-family:'Inter',sans-serif;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--turmeric-deep);
+    background:none;
+    border:1px solid var(--line);
+    padding:9px 14px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .ghost-btn:hover{border-color:var(--turmeric);}
+
+  .summary-row{
+    display:flex;
+    gap:14px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+  .summary-pill{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 16px;
+    min-width:120px;
+  }
+  .summary-pill .n{font-family:'Fraunces',serif; font-size:22px; font-weight:600;}
+  .summary-pill .l{font-size:12.5px; color:var(--ink-soft); font-weight:600;}
+
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  thead th{
+    text-align:left;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-soft);
+    padding:8px 10px;
+    border-bottom:1.5px solid var(--line);
+    white-space:nowrap;
+  }
+  tbody td{
+    padding:9px 10px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  tbody tr:hover{background:var(--paper);}
+  .badge{
+    display:inline-block;
+    font-size:11.5px;
+    font-weight:700;
+    padding:3px 8px;
+    border-radius:12px;
+  }
+  .badge.student{background:var(--leaf-soft); color:var(--leaf);}
+  .badge.staff{background:#F0E4D3; color:var(--turmeric-deep);}
+  .table-wrap{overflow-x:auto;}
+  .empty-state{
+    padding:40px 10px;
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:14.5px;
+  }
+
+  /* --- Settings --- */
+  .settings-section{margin-bottom:28px;}
+  .settings-section h3{font-size:16px; font-weight:600; margin-bottom:4px;}
+  .settings-section p.hint{color:var(--ink-soft); font-size:13.5px; margin:0 0 14px;}
+  .price-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .price-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:10px 14px;
+    background:var(--paper);
+  }
+  .price-row span{font-weight:600; font-size:14.5px;}
+  .price-row input{
+    width:80px;
+    text-align:right;
+    font-size:14.5px;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:6px;
+  }
+
+  @media (max-width:640px){
+    .form-grid{grid-template-columns:1fr;}
+    .price-grid{grid-template-columns:1fr;}
+    nav.tabs button{margin-right:16px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div>
+      <h1>Annakshetra</h1>
+      <p>Food coupon register</p>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button data-view="entry" class="active">New entry</button>
+  <button data-view="records">Records</button>
+  <button data-view="settings">Settings</button>
+</nav>
+
+<main>
+
+  <!-- NEW ENTRY -->
+  <section id="view-entry" class="view active">
+    <div class="card">
+      <form id="entry-form">
+        <div class="form-grid">
+
+          <div class="field">
+            <label for="f-date">Date</label>
+            <input type="date" id="f-date" required>
+          </div>
+          <div class="field">
+            <label for="f-time">Time</label>
+            <input type="time" id="f-time" required>
+          </div>
+
+          <div class="field full">
+            <label>Buyer type</label>
+            <div class="radio-row">
+              <label><input type="radio" name="personType" value="Student" checked> Student</label>
+              <label><input type="radio" name="personType" value="Staff"> Staff</label>
+            </div>
+          </div>
+
+          <div class="field full">
+            <label for="f-name">Name</label>
+            <input type="text" id="f-name" placeholder="Full name" required>
+          </div>
+
+          <div class="field">
+            <label for="f-coupon-type">Coupon type</label>
+            <select id="f-coupon-type" required></select>
+          </div>
+          <div class="field">
+            <label for="f-num-coupons">Number of coupons</label>
+            <input type="number" id="f-num-coupons" min="1" value="1" required>
+          </div>
+
+          <div class="field">
+            <label for="f-coupon-book">Coupon book number</label>
+            <input type="text" id="f-coupon-book" placeholder="e.g. CB-014">
+          </div>
+          <div class="field">
+            <label for="f-coupon-number">Coupon number</label>
+            <input type="text" id="f-coupon-number" placeholder="e.g. 231–235">
+          </div>
+
+          <div class="field full">
+            <label for="f-txn">Transaction ID <span style="font-weight:400;color:var(--ink-soft);">(if paid digitally)</span></label>
+            <input type="text" id="f-txn" placeholder="UPI / bank reference">
+          </div>
+
+          <div class="field full">
+            <label for="f-remarks">Remarks</label>
+            <textarea id="f-remarks" rows="2" placeholder="Optional"></textarea>
+          </div>
+
+          <div class="total-strip">
+            <span class="label">Total amount</span>
+            <span class="value" id="total-display">₹0</span>
+          </div>
+
+          <div class="submit-row">
+            <button type="submit" class="primary" id="submit-btn">Save entry</button>
+            <span class="status-msg" id="form-status"></span>
+          </div>
+
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- RECORDS -->
+  <section id="view-records" class="view">
+    <div class="records-toolbar">
+      <div class="field">
+        <label for="r-from">From</label>
+        <input type="date" id="r-from">
+      </div>
+      <div class="field">
+        <label for="r-to">To</label>
+        <input type="date" id="r-to">
+      </div>
+      <button class="ghost-btn" id="btn-today">Today</button>
+      <button class="ghost-btn" id="btn-week">Last 7 days</button>
+      <button class="ghost-btn" id="btn-all">All</button>
+      <button class="ghost-btn" id="btn-refresh" style="margin-left:auto;">Refresh</button>
+    </div>
+
+    <div class="summary-row" id="summary-row"></div>
+
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div class="table-wrap">
+        <table id="records-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Time</th><th>Type</th><th>Name</th><th>Coupon</th>
+              <th>Price</th><th>Qty</th><th>Total</th><th>Txn ID</th>
+              <th>Book #</th><th>Coupon #</th><th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody id="records-body"></tbody>
+        </table>
+        <div class="empty-state" id="records-empty" style="display:none;">No entries in this range yet.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <div class="settings-section">
+        <h3>Script URL</h3>
+        <p class="hint">Paste the Google Apps Script web app URL (ends in <code>/exec</code>) after you deploy Code.gs. This is stored only on this device.</p>
+        <div class="field">
+          <input type="text" id="s-script-url" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div style="margin-top:10px;">
+          <button class="ghost-btn" id="btn-save-url">Save URL</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Coupon prices</h3>
+        <p class="hint">Editing a price here updates the Settings sheet and applies to every new entry from now on.</p>
+        <div class="price-grid" id="price-grid"></div>
+        <div style="margin-top:14px;">
+          <button class="primary" id="btn-save-prices">Save prices</button>
+          <span class="status-msg" id="settings-status" style="margin-left:12px;"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function(){
+
+  const LS_URL_KEY = 'annakshetra_script_url';
+  const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwj5s5tvDNcNVtykGw3N-QYxgFRUAQANAGMA3ub7xaynE8_w2VuLC8z0oVHdrZsEQhP/exec';
+  let SCRIPT_URL = localStorage.getItem(LS_URL_KEY) || DEFAULT_SCRIPT_URL;
+  let couponPrices = {}; // { "Lunch": 40, ... }
+
+  // ---------- tab navigation ----------
+  const tabButtons = document.querySelectorAll('nav.tabs button');
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabButtons.forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('view-' + btn.dataset.view).classList.add('active');
+      if (btn.dataset.view === 'records') loadRecords();
+    });
+  });
+
+  // ---------- API helper ----------
+  async function callApi(payload) {
+    if (!SCRIPT_URL) {
+      throw new Error('Script URL is not set. Go to Settings and paste your Apps Script URL.');
+    }
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  // ---------- entry form ----------
+  const dateInput = document.getElementById('f-date');
+  const timeInput = document.getElementById('f-time');
+  const couponTypeSelect = document.getElementById('f-coupon-type');
+  const numCouponsInput = document.getElementById('f-num-coupons');
+  const totalDisplay = document.getElementById('total-display');
+  const form = document.getElementById('entry-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const formStatus = document.getElementById('form-status');
+
+  function setNowDefaults() {
+    const now = new Date();
+    dateInput.value = now.toISOString().slice(0, 10);
+    timeInput.value = now.toTimeString().slice(0, 5);
+  }
+  setNowDefaults();
+
+  function updateTotal() {
+    const price = couponPrices[couponTypeSelect.value] || 0;
+    const qty = parseInt(numCouponsInput.value, 10) || 0;
+    totalDisplay.textContent = '₹' + (price * qty);
+  }
+  couponTypeSelect.addEventListener('change', updateTotal);
+  numCouponsInput.addEventListener('input', updateTotal);
+
+  function populateCouponTypeOptions() {
+    couponTypeSelect.innerHTML = '';
+    Object.keys(couponPrices).forEach(type => {
+      const opt = document.createElement('option');
+      opt.value = type;
+      opt.textContent = type + ' — ₹' + couponPrices[type];
+      couponTypeSelect.appendChild(opt);
+    });
+    updateTotal();
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    formStatus.textContent = '';
+    formStatus.className = 'status-msg';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving…';
+
+    const price = couponPrices[couponTypeSelect.value] || 0;
+    const qty = parseInt(numCouponsInput.value, 10) || 0;
+
+    const entry = {
+      date: dateInput.value,
+      time: timeInput.value,
+      personType: document.querySelector('input[name=personType]:checked').value,
+      name: document.getElementById('f-name').value.trim(),
+      couponType: couponTypeSelect.value,
+      couponAmount: price,
+      numCoupons: qty,
+      totalAmount: price * qty,
+      transactionId: document.getElementById('f-txn').value.trim(),
+      couponBookNumber: document.getElementById('f-coupon-book').value.trim(),
+      couponNumber: document.getElementById('f-coupon-number').value.trim(),
+      remarks: document.getElementById('f-remarks').value.trim()
+    };
+
+    try {
+      await callApi({ action: 'addEntry', entry });
+      formStatus.textContent = 'Saved.';
+      formStatus.classList.add('ok');
+      const name = document.getElementById('f-name');
+      form.reset();
+      document.querySelector('input[name=personType][value=Student]').checked = true;
+      setNowDefaults();
+      numCouponsInput.value = 1;
+      populateCouponTypeOptions();
+      name.focus();
+    } catch (err) {
+      formStatus.textContent = err.message;
+      formStatus.classList.add('err');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save entry';
+    }
+  });
+
+  // ---------- records ----------
+  const fromInput = document.getElementById('r-from');
+  const toInput = document.getElementById('r-to');
+  const recordsBody = document.getElementById('records-body');
+  const recordsEmpty = document.getElementById('records-empty');
+  const summaryRow = document.getElementById('summary-row');
+
+  function toISO(d) { return d.toISOString().slice(0, 10); }
+
+  document.getElementById('btn-today').addEventListener('click', () => {
+    const today = toISO(new Date());
+    fromInput.value = today; toInput.value = today;
+    loadRecords();
+  });
+  document.getElementById('btn-week').addEventListener('click', () => {
+    const now = new Date();
+    const past = new Date(); past.setDate(now.getDate() - 6);
+    fromInput.value = toISO(past); toInput.value = toISO(now);
+    loadRecords();
+  });
+  document.getElementById('btn-all').addEventListener('click', () => {
+    fromInput.value = ''; toInput.value = '';
+    loadRecords();
+  });
+  document.getElementById('btn-refresh').addEventListener('click', loadRecords);
+
+  async function loadRecords() {
+    recordsBody.innerHTML = '';
+    recordsEmpty.style.display = 'none';
+    recordsEmpty.textContent = 'Loading…';
+    recordsEmpty.style.display = 'block';
+    try {
+      const data = await callApi({ action: 'getEntries', fromDate: fromInput.value, toDate: toInput.value });
+      renderRecords(data.entries || []);
+    } catch (err) {
+      recordsEmpty.textContent = err.message;
+      recordsEmpty.style.display = 'block';
+    }
+  }
+
+  function renderRecords(entries) {
+    recordsBody.innerHTML = '';
+    if (!entries.length) {
+      recordsEmpty.textContent = 'No entries in this range yet.';
+      recordsEmpty.style.display = 'block';
+      summaryRow.innerHTML = '';
+      return;
+    }
+    recordsEmpty.style.display = 'none';
+
+    let totalAmount = 0, totalCoupons = 0;
+    const byType = {};
+
+    entries.forEach(en => {
+      totalAmount += Number(en.totalAmount) || 0;
+      totalCoupons += Number(en.numCoupons) || 0;
+      byType[en.couponType] = (byType[en.couponType] || 0) + (Number(en.numCoupons) || 0);
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${en.date}</td>
+        <td>${en.time}</td>
+        <td><span class="badge ${en.personType === 'Staff' ? 'staff' : 'student'}">${en.personType}</span></td>
+        <td>${escapeHtml(en.name)}</td>
+        <td>${escapeHtml(en.couponType)}</td>
+        <td>₹${en.couponAmount}</td>
+        <td>${en.numCoupons}</td>
+        <td>₹${en.totalAmount}</td>
+        <td>${escapeHtml(en.transactionId || '—')}</td>
+        <td>${escapeHtml(en.couponBookNumber || '—')}</td>
+        <td>${escapeHtml(en.couponNumber || '—')}</td>
+        <td>${escapeHtml(en.remarks || '—')}</td>
+      `;
+      recordsBody.appendChild(tr);
+    });
+
+    let pills = `
+      <div class="summary-pill"><div class="n">${entries.length}</div><div class="l">ENTRIES</div></div>
+      <div class="summary-pill"><div class="n">${totalCoupons}</div><div class="l">COUPONS</div></div>
+      <div class="summary-pill"><div class="n">₹${totalAmount}</div><div class="l">TOTAL</div></div>
+    `;
+    Object.keys(byType).forEach(type => {
+      pills += `<div class="summary-pill"><div class="n">${byType[type]}</div><div class="l">${type.toUpperCase()}</div></div>`;
+    });
+    summaryRow.innerHTML = pills;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ---------- settings ----------
+  const scriptUrlInput = document.getElementById('s-script-url');
+  const priceGrid = document.getElementById('price-grid');
+  const settingsStatus = document.getElementById('settings-status');
+
+  scriptUrlInput.value = SCRIPT_URL;
+  document.getElementById('btn-save-url').addEventListener('click', () => {
+    SCRIPT_URL = scriptUrlInput.value.trim();
+    localStorage.setItem(LS_URL_KEY, SCRIPT_URL);
+    loadSettings();
+  });
+
+  function renderPriceGrid() {
+    priceGrid.innerHTML = '';
+    Object.keys(couponPrices).forEach(type => {
+      const row = document.createElement('div');
+      row.className = 'price-row';
+      row.innerHTML = `<span>${escapeHtml(type)}</span><input type="number" data-type="${escapeHtml(type)}" value="${couponPrices[type]}" min="0">`;
+      priceGrid.appendChild(row);
+    });
+  }
+
+  document.getElementById('btn-save-prices').addEventListener('click', async () => {
+    const inputs = priceGrid.querySelectorAll('input');
+    const updated = {};
+    inputs.forEach(inp => { updated[inp.dataset.type] = Number(inp.value); });
+    settingsStatus.textContent = 'Saving…';
+    settingsStatus.className = 'status-msg';
+    try {
+      await callApi({ action: 'updateSettings', settings: updated });
+      couponPrices = updated;
+      populateCouponTypeOptions();
+      settingsStatus.textContent = 'Prices saved.';
+      settingsStatus.classList.add('ok');
+    } catch (err) {
+      settingsStatus.textContent = err.message;
+      settingsStatus.classList.add('err');
+    }
+  });
+
+  async function loadSettings() {
+    if (!SCRIPT_URL) return;
+    try {
+      const data = await callApi({ action: 'getSettings' });
+      couponPrices = data.settings || {};
+      renderPriceGrid();
+      populateCouponTypeOptions();
+    } catch (err) {
+      settingsStatus.textContent = err.message;
+      settingsStatus.classList.add('err');
+    }
+  }
+
+  loadSettings();
+})();
+</script>
+
+</body>
+</html>

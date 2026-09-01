@@ -6,6 +6,9 @@
 <title>Annakshetra — Coupon Register</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --paper:#FAF7F1;
@@ -260,6 +263,34 @@
   }
   .records-toolbar .field{flex:0 0 auto;}
   .records-toolbar input[type=date]{width:150px;}
+  .date-field{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:0 10px;
+    background:var(--paper);
+  }
+  .date-field span{color:var(--ink-soft); font-size:14px;}
+  .date-field input{
+    border:none;
+    background:transparent;
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    color:var(--ink);
+    padding:10px 2px;
+    -moz-appearance:textfield;
+  }
+  .date-field input::-webkit-outer-spin-button,
+  .date-field input::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    margin:0;
+  }
+  .date-field input.d, .date-field input.m{width:30px;}
+  .date-field input.y{width:52px;}
+  .date-field input:focus{outline:none; background:#FBF3E4; border-radius:4px;}
+  .date-field:focus-within{border-color:var(--turmeric);}
   .ghost-btn{
     font-family:'Inter',sans-serif;
     font-size:13.5px;
@@ -452,17 +483,31 @@
   <section id="view-records" class="view">
     <div class="records-toolbar">
       <div class="field">
-        <label for="r-from">From</label>
-        <input type="date" id="r-from">
+        <label>From</label>
+        <div class="date-field" id="r-from">
+          <input type="number" class="d" placeholder="DD" min="1" max="31">
+          <span>/</span>
+          <input type="number" class="m" placeholder="MM" min="1" max="12">
+          <span>/</span>
+          <input type="number" class="y" placeholder="YYYY" min="2000" max="2100">
+        </div>
       </div>
       <div class="field">
-        <label for="r-to">To</label>
-        <input type="date" id="r-to">
+        <label>To</label>
+        <div class="date-field" id="r-to">
+          <input type="number" class="d" placeholder="DD" min="1" max="31">
+          <span>/</span>
+          <input type="number" class="m" placeholder="MM" min="1" max="12">
+          <span>/</span>
+          <input type="number" class="y" placeholder="YYYY" min="2000" max="2100">
+        </div>
       </div>
       <button class="ghost-btn" id="btn-today">Today</button>
       <button class="ghost-btn" id="btn-week">Last 7 days</button>
       <button class="ghost-btn" id="btn-all">All</button>
       <button class="ghost-btn" id="btn-refresh" style="margin-left:auto;">Refresh</button>
+      <button class="ghost-btn" id="btn-export-excel">Export Excel</button>
+      <button class="ghost-btn" id="btn-export-pdf">Export PDF</button>
     </div>
 
     <div class="summary-row" id="summary-row"></div>
@@ -713,27 +758,53 @@
   }
 
   // ---------- records ----------
-  const fromInput = document.getElementById('r-from');
-  const toInput = document.getElementById('r-to');
+  const fromField = document.getElementById('r-from');
+  const toField = document.getElementById('r-to');
   const recordsBody = document.getElementById('records-body');
   const recordsEmpty = document.getElementById('records-empty');
   const summaryRow = document.getElementById('summary-row');
+  let currentEntries = [];
+  let currentRangeLabel = 'All dates';
 
   function toISO(d) { return d.toISOString().slice(0, 10); }
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function setDateField(field, isoDate) {
+    const [y, m, d] = isoDate ? isoDate.split('-') : ['', '', ''];
+    field.querySelector('.d').value = d ? Number(d) : '';
+    field.querySelector('.m').value = m ? Number(m) : '';
+    field.querySelector('.y').value = y || '';
+  }
+
+  function getDateField(field) {
+    const d = field.querySelector('.d').value;
+    const m = field.querySelector('.m').value;
+    const y = field.querySelector('.y').value;
+    if (!d || !m || !y || String(y).length !== 4) return '';
+    return `${y}-${pad2(m)}-${pad2(d)}`;
+  }
+
+  function clearDateField(field) {
+    field.querySelectorAll('input').forEach(inp => { inp.value = ''; });
+  }
+
   document.getElementById('btn-today').addEventListener('click', () => {
     const today = toISO(new Date());
-    fromInput.value = today; toInput.value = today;
+    setDateField(fromField, today);
+    setDateField(toField, today);
     loadRecords();
   });
   document.getElementById('btn-week').addEventListener('click', () => {
     const now = new Date();
     const past = new Date(); past.setDate(now.getDate() - 6);
-    fromInput.value = toISO(past); toInput.value = toISO(now);
+    setDateField(fromField, toISO(past));
+    setDateField(toField, toISO(now));
     loadRecords();
   });
   document.getElementById('btn-all').addEventListener('click', () => {
-    fromInput.value = ''; toInput.value = '';
+    clearDateField(fromField);
+    clearDateField(toField);
     loadRecords();
   });
   document.getElementById('btn-refresh').addEventListener('click', loadRecords);
@@ -742,12 +813,18 @@
     recordsBody.innerHTML = '';
     recordsEmpty.style.display = 'none';
     showLoading('Loading records…');
+    const fromDate = getDateField(fromField);
+    const toDate = getDateField(toField);
+    currentRangeLabel = fromDate || toDate
+      ? `${fromDate ? formatDateDisplay(fromDate) : 'start'} to ${toDate ? formatDateDisplay(toDate) : 'now'}`
+      : 'All dates';
     try {
-      const data = await callApi({ action: 'getEntries', fromDate: fromInput.value, toDate: toInput.value });
+      const data = await callApi({ action: 'getEntries', fromDate, toDate });
       renderRecords(data.entries || []);
     } catch (err) {
       recordsEmpty.textContent = err.message;
       recordsEmpty.style.display = 'block';
+      currentEntries = [];
     } finally {
       hideLoading();
     }
@@ -777,6 +854,7 @@
   }
 
   function renderRecords(entries) {
+    currentEntries = entries;
     recordsBody.innerHTML = '';
     if (!entries.length) {
       recordsEmpty.textContent = 'No entries in this range yet.';
@@ -822,6 +900,62 @@
     });
     summaryRow.innerHTML = pills;
   }
+
+  // ---------- export ----------
+  const EXPORT_COLUMNS = [
+    'Date', 'Time', 'Type', 'Name', 'Coupon Type', 'Price',
+    'Qty', 'Total', 'Txn ID', 'Book #', 'Coupon #', 'Remarks'
+  ];
+
+  function exportRows() {
+    return currentEntries.map(en => [
+      formatDateDisplay(en.date),
+      formatTimeDisplay(en.time),
+      en.personType,
+      en.name,
+      en.couponType,
+      en.couponAmount,
+      en.numCoupons,
+      en.totalAmount,
+      en.transactionId || '',
+      en.couponBookNumber || '',
+      en.couponNumber || '',
+      en.remarks || ''
+    ]);
+  }
+
+  document.getElementById('btn-export-excel').addEventListener('click', () => {
+    if (!currentEntries.length) { showToast('Nothing to export in this range', 'err'); return; }
+    const rows = [EXPORT_COLUMNS, ...exportRows()];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = EXPORT_COLUMNS.map(() => ({ wch: 14 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Entries');
+    const filename = 'annakshetra-coupons_' + toISO(new Date()) + '.xlsx';
+    XLSX.writeFile(wb, filename);
+    showToast('Excel file downloaded');
+  });
+
+  document.getElementById('btn-export-pdf').addEventListener('click', () => {
+    if (!currentEntries.length) { showToast('Nothing to export in this range', 'err'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(14);
+    doc.text('Annakshetra — Coupon Register', 14, 16);
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(currentRangeLabel, 14, 22);
+    doc.autoTable({
+      head: [EXPORT_COLUMNS],
+      body: exportRows(),
+      startY: 28,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [184, 121, 28] }
+    });
+    const filename = 'annakshetra-coupons_' + toISO(new Date()) + '.pdf';
+    doc.save(filename);
+    showToast('PDF downloaded');
+  });
 
   function escapeHtml(str) {
     const div = document.createElement('div');
@@ -869,9 +1003,9 @@
     }
   });
 
-  async function loadSettings() {
+  async function loadSettings(loadingMessage) {
     if (!SCRIPT_URL) return;
-    showLoading('Loading settings…');
+    showLoading(loadingMessage || 'Loading settings…');
     try {
       const data = await callApi({ action: 'getSettings' });
       couponPrices = data.settings || {};
@@ -885,7 +1019,9 @@
     }
   }
 
-  loadSettings();
+  // Initial app bootstrap — frame this as loading the whole register,
+  // not just the settings, since that's what it looks like to the user.
+  loadSettings('Loading register…');
 })();
 </script>
 

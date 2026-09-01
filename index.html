@@ -42,13 +42,15 @@
   }
   .brand{
     display:flex;
-    align-items:baseline;
+    align-items:center;
     justify-content:space-between;
     gap:16px;
     flex-wrap:wrap;
     border-bottom:1px solid var(--line);
     padding-bottom:18px;
   }
+  .brand-name{display:flex; align-items:center; gap:14px;}
+  .brand-name img{height:44px; width:auto; display:block;}
   .brand h1{font-size:28px; font-weight:600; color:var(--turmeric-deep);}
   .brand p{margin:4px 0 0; color:var(--ink-soft); font-size:14px;}
 
@@ -170,6 +172,26 @@
   .status-msg.ok{color:var(--leaf);}
   .status-msg.err{color:var(--chili);}
 
+  .retry-banner{
+    margin-bottom:16px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .retry-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    background:var(--chili-soft);
+    border:1px solid #E3B8B3;
+    border-radius:8px;
+    padding:10px 14px;
+    font-size:13.5px;
+    color:var(--chili);
+  }
+  .retry-row .retry-btn{flex-shrink:0;}
+
   /* --- Records --- */
   .records-toolbar{
     display:flex;
@@ -278,9 +300,12 @@
 
 <header>
   <div class="brand">
-    <div>
-      <h1>Annakshetra</h1>
-      <p>Food coupon register</p>
+    <div class="brand-name">
+      <img src="CVV_Logo_Blue.png" alt="Chinmaya Vishwa Vidyapeeth logo">
+      <div>
+        <h1>Annakshetra</h1>
+        <p>Food coupon register</p>
+      </div>
     </div>
   </div>
 </header>
@@ -295,6 +320,7 @@
 
   <!-- NEW ENTRY -->
   <section id="view-entry" class="view active">
+    <div id="retry-banner" class="retry-banner" style="display:none;"></div>
     <div class="card">
       <form id="entry-form">
         <div class="form-grid">
@@ -498,12 +524,10 @@
     updateTotal();
   }
 
-  form.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
     formStatus.textContent = '';
     formStatus.className = 'status-msg';
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving…';
 
     const price = couponPrices[couponTypeSelect.value] || 0;
     const qty = parseInt(numCouponsInput.value, 10) || 0;
@@ -523,25 +547,71 @@
       remarks: document.getElementById('f-remarks').value.trim()
     };
 
-    try {
-      await callApi({ action: 'addEntry', entry });
-      formStatus.textContent = 'Saved.';
-      formStatus.classList.add('ok');
-      const name = document.getElementById('f-name');
-      form.reset();
-      document.querySelector('input[name=personType][value=Student]').checked = true;
-      setNowDefaults();
-      numCouponsInput.value = 1;
-      populateCouponTypeOptions();
-      name.focus();
-    } catch (err) {
-      formStatus.textContent = err.message;
-      formStatus.classList.add('err');
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Save entry';
-    }
+    // Optimistic UI: clear the form and let the person move straight on to
+    // the next entry instead of waiting for the network round trip. The
+    // save itself happens in the background; a failure surfaces as a
+    // retryable banner rather than blocking the counter.
+    const nameField = document.getElementById('f-name');
+    form.reset();
+    document.querySelector('input[name=personType][value=Student]').checked = true;
+    setNowDefaults();
+    numCouponsInput.value = 1;
+    populateCouponTypeOptions();
+    nameField.focus();
+
+    saveEntryInBackground(entry);
   });
+
+  let pendingRetries = [];
+  const retryBanner = document.getElementById('retry-banner');
+
+  function saveEntryInBackground(entry, bannerRow) {
+    const tag = 'saving-' + Math.random().toString(36).slice(2);
+    formStatus.textContent = 'Saving ' + entry.name + '…';
+    formStatus.className = 'status-msg';
+
+    callApi({ action: 'addEntry', entry })
+      .then(() => {
+        formStatus.textContent = 'Saved ' + entry.name + '.';
+        formStatus.classList.add('ok');
+        if (bannerRow) bannerRow.remove();
+        renderRetryBanner();
+      })
+      .catch((err) => {
+        formStatus.textContent = 'Could not save ' + entry.name + ' — see below.';
+        formStatus.classList.add('err');
+        if (!bannerRow) {
+          pendingRetries.push({ entry, error: err.message });
+        } else {
+          bannerRow.dataset.error = err.message;
+        }
+        renderRetryBanner();
+      });
+  }
+
+  function renderRetryBanner() {
+    retryBanner.innerHTML = '';
+    if (!pendingRetries.length) {
+      retryBanner.style.display = 'none';
+      return;
+    }
+    retryBanner.style.display = 'block';
+    pendingRetries.forEach((item, idx) => {
+      const row = document.createElement('div');
+      row.className = 'retry-row';
+      row.innerHTML = `
+        <span><strong>${escapeHtml(item.entry.name)}</strong> — ${escapeHtml(item.entry.couponType)} ×${item.entry.numCoupons} didn't save (${escapeHtml(item.error)})</span>
+        <button type="button" class="ghost-btn retry-btn">Retry</button>
+      `;
+      row.querySelector('.retry-btn').addEventListener('click', () => {
+        pendingRetries.splice(idx, 1);
+        renderRetryBanner();
+        saveEntryInBackground(item.entry, row);
+        retryBanner.appendChild(row);
+      });
+      retryBanner.appendChild(row);
+    });
+  }
 
   // ---------- records ----------
   const fromInput = document.getElementById('r-from');

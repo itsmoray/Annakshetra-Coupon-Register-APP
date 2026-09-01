@@ -192,6 +192,49 @@
   }
   .retry-row .retry-btn{flex-shrink:0;}
 
+  /* --- Loading overlay --- */
+  .loading-overlay{
+    position:fixed; inset:0;
+    background:rgba(250,247,241,0.55);
+    backdrop-filter:blur(5px);
+    -webkit-backdrop-filter:blur(5px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    z-index:2000;
+    opacity:0; pointer-events:none;
+    transition:opacity .18s ease;
+  }
+  .loading-overlay.active{opacity:1; pointer-events:all;}
+  .spinner{
+    width:34px; height:34px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--turmeric);
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .loading-overlay .loading-msg{font-size:13.5px; font-weight:600; color:var(--ink-soft);}
+
+  /* --- Toasts --- */
+  .toast-container{
+    position:fixed; bottom:22px; right:22px;
+    display:flex; flex-direction:column; gap:10px;
+    z-index:2500;
+    max-width:320px;
+  }
+  .toast{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:4px solid var(--leaf);
+    border-radius:8px;
+    padding:12px 16px;
+    box-shadow:var(--shadow);
+    font-size:14px; font-weight:600;
+    color:var(--leaf);
+    animation:toast-in .22s ease;
+  }
+  .toast.err{border-left-color:var(--chili); color:var(--chili);}
+  .toast.hide{animation:toast-out .22s ease forwards;}
+  @keyframes toast-in{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+  @keyframes toast-out{ to{opacity:0; transform:translateY(8px);} }
+
   /* --- Records --- */
   .records-toolbar{
     display:flex;
@@ -454,6 +497,13 @@
 
 </main>
 
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-msg" id="loading-msg">Loading…</div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
 <script>
 (function(){
 
@@ -486,6 +536,34 @@
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     return data;
+  }
+
+  // ---------- loading overlay ----------
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingMsg = document.getElementById('loading-msg');
+  let loadingDepth = 0; // supports overlapping calls without flicker
+
+  function showLoading(msg) {
+    loadingDepth++;
+    loadingMsg.textContent = msg || 'Loading…';
+    loadingOverlay.classList.add('active');
+  }
+  function hideLoading() {
+    loadingDepth = Math.max(0, loadingDepth - 1);
+    if (loadingDepth === 0) loadingOverlay.classList.remove('active');
+  }
+
+  // ---------- toasts ----------
+  const toastContainer = document.getElementById('toast-container');
+  function showToast(message, type) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (type === 'err' ? ' err' : '');
+    el.textContent = message;
+    toastContainer.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('hide');
+      setTimeout(() => el.remove(), 220);
+    }, 3200);
   }
 
   // ---------- entry form ----------
@@ -526,6 +604,13 @@
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+
+    // Guard against an accidental double tap/click submitting the same
+    // entry twice before the form has a chance to clear.
+    if (submitBtn.disabled) return;
+    submitBtn.disabled = true;
+    setTimeout(() => { submitBtn.disabled = false; }, 600);
+
     formStatus.textContent = '';
     formStatus.className = 'status-msg';
 
@@ -566,20 +651,19 @@
   const retryBanner = document.getElementById('retry-banner');
 
   function saveEntryInBackground(entry, bannerRow) {
-    const tag = 'saving-' + Math.random().toString(36).slice(2);
     formStatus.textContent = 'Saving ' + entry.name + '…';
     formStatus.className = 'status-msg';
 
     callApi({ action: 'addEntry', entry })
       .then(() => {
-        formStatus.textContent = 'Saved ' + entry.name + '.';
-        formStatus.classList.add('ok');
+        formStatus.textContent = '';
+        showToast('Saved — ' + entry.name + ' (' + entry.couponType + ' ×' + entry.numCoupons + ')');
         if (bannerRow) bannerRow.remove();
         renderRetryBanner();
       })
       .catch((err) => {
-        formStatus.textContent = 'Could not save ' + entry.name + ' — see below.';
-        formStatus.classList.add('err');
+        formStatus.textContent = '';
+        showToast('Could not save ' + entry.name + ' — see below', 'err');
         if (!bannerRow) {
           pendingRetries.push({ entry, error: err.message });
         } else {
@@ -642,14 +726,15 @@
   async function loadRecords() {
     recordsBody.innerHTML = '';
     recordsEmpty.style.display = 'none';
-    recordsEmpty.textContent = 'Loading…';
-    recordsEmpty.style.display = 'block';
+    showLoading('Loading records…');
     try {
       const data = await callApi({ action: 'getEntries', fromDate: fromInput.value, toDate: toInput.value });
       renderRecords(data.entries || []);
     } catch (err) {
       recordsEmpty.textContent = err.message;
       recordsEmpty.style.display = 'block';
+    } finally {
+      hideLoading();
     }
   }
 
@@ -732,22 +817,23 @@
     const inputs = priceGrid.querySelectorAll('input');
     const updated = {};
     inputs.forEach(inp => { updated[inp.dataset.type] = Number(inp.value); });
-    settingsStatus.textContent = 'Saving…';
-    settingsStatus.className = 'status-msg';
+    settingsStatus.textContent = '';
+    showLoading('Saving prices…');
     try {
       await callApi({ action: 'updateSettings', settings: updated });
       couponPrices = updated;
       populateCouponTypeOptions();
-      settingsStatus.textContent = 'Prices saved.';
-      settingsStatus.classList.add('ok');
+      showToast('Coupon prices saved');
     } catch (err) {
-      settingsStatus.textContent = err.message;
-      settingsStatus.classList.add('err');
+      showToast(err.message, 'err');
+    } finally {
+      hideLoading();
     }
   });
 
   async function loadSettings() {
     if (!SCRIPT_URL) return;
+    showLoading('Loading settings…');
     try {
       const data = await callApi({ action: 'getSettings' });
       couponPrices = data.settings || {};
@@ -756,6 +842,8 @@
     } catch (err) {
       settingsStatus.textContent = err.message;
       settingsStatus.classList.add('err');
+    } finally {
+      hideLoading();
     }
   }
 

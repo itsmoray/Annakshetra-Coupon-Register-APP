@@ -310,6 +310,7 @@
   .records-toolbar .field{flex:0 0 auto;}
   .records-toolbar input[type=date]{width:150px;}
   .date-field{
+    position:relative;
     display:flex;
     align-items:center;
     gap:4px;
@@ -337,6 +338,27 @@
   .date-field input.y{width:52px;}
   .date-field input:focus{outline:none; background:#FBF3E4; border-radius:4px;}
   .date-field:focus-within{border-color:var(--turmeric);}
+  .date-field .cal-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:none;
+    background:none;
+    padding:6px 4px 6px 6px;
+    margin-left:2px;
+    cursor:pointer;
+    color:var(--ink-soft);
+    border-left:1px solid var(--line);
+  }
+  .date-field .cal-btn:hover{color:var(--turmeric-deep);}
+  .date-field .cal-btn svg{display:block;}
+  .date-field input.native-date{
+    position:absolute;
+    width:1px; height:1px;
+    padding:0; margin:0;
+    opacity:0; border:none;
+    pointer-events:none;
+  }
   .ghost-btn{
     font-family:'Inter',sans-serif;
     font-size:13.5px;
@@ -540,6 +562,10 @@
           <input type="number" class="m" placeholder="MM" min="1" max="12">
           <span>/</span>
           <input type="number" class="y" placeholder="YYYY" min="2000" max="2100">
+          <input type="date" class="native-date" tabindex="-1" aria-hidden="true">
+          <button type="button" class="cal-btn" aria-label="Pick from date">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
         </div>
       </div>
       <div class="field">
@@ -550,6 +576,10 @@
           <input type="number" class="m" placeholder="MM" min="1" max="12">
           <span>/</span>
           <input type="number" class="y" placeholder="YYYY" min="2000" max="2100">
+          <input type="date" class="native-date" tabindex="-1" aria-hidden="true">
+          <button type="button" class="cal-btn" aria-label="Pick to date">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
         </div>
       </div>
       <button class="ghost-btn" id="btn-today">Today</button>
@@ -958,6 +988,30 @@
   function clearDateField(field) {
     field.querySelectorAll('input').forEach(inp => { inp.value = ''; });
   }
+
+  // Calendar-icon picker: a hidden native <input type="date"> backs each
+  // D/M/Y field group. Clicking the icon opens the browser's own date
+  // picker; whatever gets picked is written back into the D/M/Y boxes
+  // using the same setDateField() path the quick-range buttons use.
+  [fromField, toField].forEach(field => {
+    const nativeInput = field.querySelector('.native-date');
+    const calBtn = field.querySelector('.cal-btn');
+    calBtn.addEventListener('click', () => {
+      const current = getDateField(field);
+      nativeInput.value = current || '';
+      if (typeof nativeInput.showPicker === 'function') {
+        nativeInput.showPicker();
+      } else {
+        // Fallback for browsers without showPicker() (older Safari/Firefox)
+        nativeInput.focus();
+        nativeInput.click();
+      }
+    });
+    nativeInput.addEventListener('change', () => {
+      setDateField(field, nativeInput.value);
+      loadRecords();
+    });
+  });
 
   document.getElementById('btn-today').addEventListener('click', () => {
     const today = toISO(new Date());

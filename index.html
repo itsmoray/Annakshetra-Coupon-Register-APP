@@ -225,6 +225,39 @@
   }
   .retry-banner-head .sync-btn{flex-shrink:0;}
 
+  .attribution-hint{
+    color:var(--ink-soft);
+    font-size:13px;
+    margin-bottom:14px;
+  }
+
+  .undo-banner{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    background:var(--leaf-soft);
+    border:1px solid #C3D6C4;
+    border-radius:8px;
+    padding:10px 14px;
+    margin-bottom:16px;
+    font-size:13.5px;
+    color:var(--leaf);
+  }
+  .undo-banner button{
+    flex-shrink:0;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:700;
+    color:var(--leaf);
+    background:#fff;
+    border:1px solid #C3D6C4;
+    border-radius:6px;
+    padding:6px 12px;
+    cursor:pointer;
+  }
+  .undo-banner button:hover{background:var(--leaf-soft);}
+
   .conn-badge{
     display:flex;
     align-items:center;
@@ -481,6 +514,8 @@
 
   <!-- NEW ENTRY -->
   <section id="view-entry" class="view active">
+    <div id="undo-banner" class="undo-banner" style="display:none;"></div>
+    <div id="attribution-hint" class="attribution-hint" style="display:none;">Tip: set your name in Settings so entries can be traced back to you.</div>
     <div id="retry-banner" class="retry-banner" style="display:none;"></div>
     <div class="card">
       <form id="entry-form">
@@ -599,7 +634,7 @@
             <tr>
               <th>Date</th><th>Time</th><th>Type</th><th>Name</th><th>Coupon</th>
               <th>Price</th><th>Qty</th><th>Total</th><th>Txn ID</th>
-              <th>Book #</th><th>Coupon #</th><th>Remarks</th>
+              <th>Book #</th><th>Coupon #</th><th>Remarks</th><th>Entered By</th>
             </tr>
           </thead>
           <tbody id="records-body"></tbody>
@@ -620,6 +655,28 @@
         </div>
         <div style="margin-top:10px;">
           <button class="ghost-btn" id="btn-save-url">Save URL</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Access token</h3>
+        <p class="hint">If you've set an <code>AUTH_TOKEN</code> script property on the backend (see the SECURITY note at the top of Code.gs), paste the same value here. Every request from this device will include it. Leave blank if you haven't set one up yet.</p>
+        <div class="field">
+          <input type="password" id="s-auth-token" placeholder="Access token" autocomplete="off">
+        </div>
+        <div style="margin-top:10px;">
+          <button class="ghost-btn" id="btn-save-token">Save token</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Your name</h3>
+        <p class="hint">Shown against every entry you save from this device, so a coupon count can be traced back to whoever was at the counter.</p>
+        <div class="field">
+          <input type="text" id="s-entered-by" placeholder="e.g. Anjali (Counter 2)">
+        </div>
+        <div style="margin-top:10px;">
+          <button class="ghost-btn" id="btn-save-entered-by">Save name</button>
         </div>
       </div>
 
@@ -648,9 +705,20 @@
 (function(){
 
   const LS_URL_KEY = 'annakshetra_script_url';
+  const LS_TOKEN_KEY = 'annakshetra_auth_token';
+  const LS_ENTERED_BY_KEY = 'annakshetra_entered_by';
   const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwj5s5tvDNcNVtykGw3N-QYxgFRUAQANAGMA3ub7xaynE8_w2VuLC8z0oVHdrZsEQhP/exec';
   let SCRIPT_URL = localStorage.getItem(LS_URL_KEY) || DEFAULT_SCRIPT_URL;
+  let AUTH_TOKEN = localStorage.getItem(LS_TOKEN_KEY) || '';
+  let ENTERED_BY = localStorage.getItem(LS_ENTERED_BY_KEY) || '';
   let couponPrices = {}; // { "Lunch": 40, ... }
+
+  // How long a just-saved entry can be undone from this device. Mirrors
+  // the backend's VOID_WINDOW_MS — this copy only drives the on-screen
+  // countdown; the server independently enforces the real cutoff, so
+  // clock drift here just means the button might show a few seconds off,
+  // never that void succeeds when it shouldn't.
+  const VOID_WINDOW_MS = 2 * 60 * 1000;
 
   // ---------- offline queue ----------
   // Entries that fail to save — including because the device is offline —
@@ -695,7 +763,7 @@
     }
     const res = await fetch(SCRIPT_URL, {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify(Object.assign({ token: AUTH_TOKEN }, payload))
     });
     const raw = await res.text();
     let data;
@@ -808,7 +876,8 @@
       transactionId: document.getElementById('f-txn').value.trim(),
       couponBookNumber: document.getElementById('f-coupon-book').value.trim(),
       couponNumber: document.getElementById('f-coupon-number').value.trim(),
-      remarks: document.getElementById('f-remarks').value.trim()
+      remarks: document.getElementById('f-remarks').value.trim(),
+      enteredBy: ENTERED_BY
     };
 
     // Optimistic UI: clear the form and let the person move straight on to
@@ -833,6 +902,50 @@
   let pendingRetries = loadQueue();
   const retryBanner = document.getElementById('retry-banner');
   let isSyncing = false;
+
+  // ---------- undo last entry ----------
+  const undoBanner = document.getElementById('undo-banner');
+  let undoDeadline = 0;
+  let undoTickTimer = null;
+
+  function showUndoBanner(entry) {
+    undoDeadline = Date.now() + VOID_WINDOW_MS;
+    clearInterval(undoTickTimer);
+    renderUndoBanner(entry);
+    undoTickTimer = setInterval(() => renderUndoBanner(entry), 1000);
+  }
+
+  function renderUndoBanner(entry) {
+    const remainingMs = undoDeadline - Date.now();
+    if (remainingMs <= 0) { hideUndoBanner(); return; }
+    const seconds = Math.ceil(remainingMs / 1000);
+    undoBanner.style.display = 'flex';
+    undoBanner.innerHTML = `
+      <span>Saved — ${escapeHtml(entry.name)} (${escapeHtml(entry.couponType)} ×${entry.numCoupons})</span>
+      <button type="button" id="btn-undo-entry">Undo (${seconds}s)</button>
+    `;
+    document.getElementById('btn-undo-entry').addEventListener('click', () => voidLastEntry(entry.clientId));
+  }
+
+  function hideUndoBanner() {
+    clearInterval(undoTickTimer);
+    undoDeadline = 0;
+    undoBanner.style.display = 'none';
+    undoBanner.innerHTML = '';
+  }
+
+  async function voidLastEntry(clientId) {
+    hideUndoBanner();
+    showLoading('Voiding entry…');
+    try {
+      await callApi({ action: 'voidEntry', clientId });
+      showToast('Entry voided');
+    } catch (err) {
+      showToast(err.message, 'err');
+    } finally {
+      hideLoading();
+    }
+  }
 
   function queueOffline(entry) {
     pendingRetries.push({ id: entry.clientId, entry, error: null });
@@ -865,6 +978,7 @@
         saveQueue();
         renderRetryBanner();
         updateConnBadge();
+        showUndoBanner(entry);
       })
       .catch((err) => {
         formStatus.textContent = '';
@@ -1110,6 +1224,7 @@
         <td>${escapeHtml(en.couponBookNumber || '—')}</td>
         <td>${escapeHtml(en.couponNumber || '—')}</td>
         <td>${escapeHtml(en.remarks || '—')}</td>
+        <td>${escapeHtml(en.enteredBy || '—')}</td>
       `;
       recordsBody.appendChild(tr);
     });
@@ -1128,7 +1243,7 @@
   // ---------- export ----------
   const EXPORT_COLUMNS = [
     'Date', 'Time', 'Type', 'Name', 'Coupon Type', 'Price',
-    'Qty', 'Total', 'Txn ID', 'Book #', 'Coupon #', 'Remarks'
+    'Qty', 'Total', 'Txn ID', 'Book #', 'Coupon #', 'Remarks', 'Entered By'
   ];
 
   function exportRows() {
@@ -1144,7 +1259,8 @@
       en.transactionId || '',
       en.couponBookNumber || '',
       en.couponNumber || '',
-      en.remarks || ''
+      en.remarks || '',
+      en.enteredBy || ''
     ]);
   }
 
@@ -1198,6 +1314,28 @@
     localStorage.setItem(LS_URL_KEY, SCRIPT_URL);
     loadSettings();
   });
+
+  const authTokenInput = document.getElementById('s-auth-token');
+  authTokenInput.value = AUTH_TOKEN;
+  document.getElementById('btn-save-token').addEventListener('click', () => {
+    AUTH_TOKEN = authTokenInput.value.trim();
+    localStorage.setItem(LS_TOKEN_KEY, AUTH_TOKEN);
+    showToast('Access token saved on this device');
+  });
+
+  const enteredByInput = document.getElementById('s-entered-by');
+  const attributionHint = document.getElementById('attribution-hint');
+  enteredByInput.value = ENTERED_BY;
+  function updateAttributionHint() {
+    attributionHint.style.display = ENTERED_BY ? 'none' : 'block';
+  }
+  document.getElementById('btn-save-entered-by').addEventListener('click', () => {
+    ENTERED_BY = enteredByInput.value.trim();
+    localStorage.setItem(LS_ENTERED_BY_KEY, ENTERED_BY);
+    updateAttributionHint();
+    showToast('Name saved on this device');
+  });
+  updateAttributionHint();
 
   function renderPriceGrid() {
     priceGrid.innerHTML = '';

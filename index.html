@@ -209,6 +209,52 @@
     color:var(--chili);
   }
   .retry-row .retry-btn{flex-shrink:0;}
+  .retry-row.offline{
+    background:var(--leaf-soft);
+    border-color:#C3D6C4;
+    color:var(--leaf);
+  }
+  .retry-banner-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+  }
+  .retry-banner-head .sync-btn{flex-shrink:0;}
+
+  .conn-badge{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--leaf);
+    background:var(--leaf-soft);
+    border:1px solid #C3D6C4;
+    border-radius:20px;
+    padding:6px 12px;
+    flex-shrink:0;
+  }
+  .conn-badge .dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--leaf);
+    flex-shrink:0;
+  }
+  .conn-badge.offline{
+    color:var(--chili);
+    background:var(--chili-soft);
+    border-color:#E3B8B3;
+  }
+  .conn-badge.offline .dot{background:var(--chili);}
+  .conn-badge .pending-count{
+    background:rgba(0,0,0,0.08);
+    border-radius:10px;
+    padding:1px 7px;
+    font-size:12px;
+  }
 
   /* --- Loading overlay --- */
   .loading-overlay{
@@ -396,6 +442,10 @@
         <p>Food coupon register</p>
       </div>
     </div>
+    <div class="conn-badge" id="conn-badge">
+      <span class="dot"></span>
+      <span class="conn-text">Online</span>
+    </div>
   </div>
 </header>
 
@@ -572,6 +622,30 @@
   let SCRIPT_URL = localStorage.getItem(LS_URL_KEY) || DEFAULT_SCRIPT_URL;
   let couponPrices = {}; // { "Lunch": 40, ... }
 
+  // ---------- offline queue ----------
+  // Entries that fail to save — including because the device is offline —
+  // live here AND in localStorage, so a refresh or a closed tab doesn't
+  // lose anything that hasn't reached the sheet yet.
+  const LS_QUEUE_KEY = 'annakshetra_pending_queue';
+
+  function makeClientId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function loadQueue() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LS_QUEUE_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveQueue() {
+    localStorage.setItem(LS_QUEUE_KEY, JSON.stringify(pendingRetries));
+  }
+
   // ---------- tab navigation ----------
   const tabButtons = document.querySelectorAll('nav.tabs button');
   tabButtons.forEach(btn => {
@@ -678,6 +752,7 @@
     const qty = parseInt(numCouponsInput.value, 10) || 0;
 
     const entry = {
+      clientId: makeClientId(),
       date: dateInput.value,
       time: timeInput.value,
       personType: document.querySelector('input[name=personType]:checked').value,
@@ -704,13 +779,37 @@
     populateCouponTypeOptions();
     nameField.focus();
 
-    saveEntryInBackground(entry);
+    if (!navigator.onLine) {
+      queueOffline(entry);
+    } else {
+      saveEntryInBackground(entry);
+    }
   });
 
-  let pendingRetries = [];
+  let pendingRetries = loadQueue();
   const retryBanner = document.getElementById('retry-banner');
+  let isSyncing = false;
 
-  function saveEntryInBackground(entry, bannerRow) {
+  function queueOffline(entry) {
+    pendingRetries.push({ id: entry.clientId, entry, error: null });
+    saveQueue();
+    formStatus.textContent = '';
+    showToast("You're offline — " + entry.name + ' queued, will sync automatically');
+    renderRetryBanner();
+    updateConnBadge();
+  }
+
+  function upsertQueueItem(entry, errorMessage) {
+    const existing = pendingRetries.find(p => p.id === entry.clientId);
+    if (existing) {
+      existing.error = errorMessage;
+    } else {
+      pendingRetries.push({ id: entry.clientId, entry, error: errorMessage });
+    }
+    saveQueue();
+  }
+
+  function saveEntryInBackground(entry) {
     formStatus.textContent = 'Saving ' + entry.name + '…';
     formStatus.className = 'status-msg';
 
@@ -718,19 +817,43 @@
       .then(() => {
         formStatus.textContent = '';
         showToast('Saved — ' + entry.name + ' (' + entry.couponType + ' ×' + entry.numCoupons + ')');
-        if (bannerRow) bannerRow.remove();
+        pendingRetries = pendingRetries.filter(p => p.id !== entry.clientId);
+        saveQueue();
         renderRetryBanner();
+        updateConnBadge();
       })
       .catch((err) => {
         formStatus.textContent = '';
         showToast('Could not save ' + entry.name + ' — see below', 'err');
-        if (!bannerRow) {
-          pendingRetries.push({ entry, error: err.message });
-        } else {
-          bannerRow.dataset.error = err.message;
-        }
+        upsertQueueItem(entry, err.message);
         renderRetryBanner();
+        updateConnBadge();
       });
+  }
+
+  // Retries every queued entry in order. Safe to call repeatedly — it
+  // no-ops while a sync is already running, while the queue is empty, or
+  // while the browser reports itself offline (the fetch would just fail
+  // and re-add the same item, so there's no point trying).
+  async function syncPendingEntries() {
+    if (isSyncing || !pendingRetries.length || !navigator.onLine) return;
+    isSyncing = true;
+    const queueSnapshot = pendingRetries.map(item => item.entry);
+    for (const entry of queueSnapshot) {
+      if (!navigator.onLine) break;
+      try {
+        await callApi({ action: 'addEntry', entry });
+        pendingRetries = pendingRetries.filter(p => p.id !== entry.clientId);
+        saveQueue();
+        renderRetryBanner();
+        showToast('Synced — ' + entry.name);
+      } catch (err) {
+        upsertQueueItem(entry, err.message);
+        renderRetryBanner();
+      }
+    }
+    isSyncing = false;
+    updateConnBadge();
   }
 
   function renderRetryBanner() {
@@ -740,22 +863,55 @@
       return;
     }
     retryBanner.style.display = 'block';
-    pendingRetries.forEach((item, idx) => {
+
+    const head = document.createElement('div');
+    head.className = 'retry-banner-head';
+    head.innerHTML = `
+      <span>${pendingRetries.length} ${pendingRetries.length === 1 ? 'entry' : 'entries'} waiting to sync</span>
+      <button type="button" class="ghost-btn sync-btn">Sync now</button>
+    `;
+    head.querySelector('.sync-btn').addEventListener('click', syncPendingEntries);
+    retryBanner.appendChild(head);
+
+    pendingRetries.forEach((item) => {
       const row = document.createElement('div');
-      row.className = 'retry-row';
+      row.className = 'retry-row' + (item.error ? '' : ' offline');
+      const reason = item.error
+        ? `didn't save (${escapeHtml(item.error)})`
+        : 'saved offline — waiting for connection';
       row.innerHTML = `
-        <span><strong>${escapeHtml(item.entry.name)}</strong> — ${escapeHtml(item.entry.couponType)} ×${item.entry.numCoupons} didn't save (${escapeHtml(item.error)})</span>
+        <span><strong>${escapeHtml(item.entry.name)}</strong> — ${escapeHtml(item.entry.couponType)} ×${item.entry.numCoupons} ${reason}</span>
         <button type="button" class="ghost-btn retry-btn">Retry</button>
       `;
-      row.querySelector('.retry-btn').addEventListener('click', () => {
-        pendingRetries.splice(idx, 1);
-        renderRetryBanner();
-        saveEntryInBackground(item.entry, row);
-        retryBanner.appendChild(row);
-      });
+      row.querySelector('.retry-btn').addEventListener('click', () => saveEntryInBackground(item.entry));
       retryBanner.appendChild(row);
     });
   }
+
+  // ---------- connectivity ----------
+  const connBadge = document.getElementById('conn-badge');
+
+  function updateConnBadge() {
+    if (!connBadge) return;
+    const online = navigator.onLine;
+    connBadge.classList.toggle('offline', !online);
+    const pendingHtml = pendingRetries.length
+      ? `<span class="pending-count">${pendingRetries.length}</span>`
+      : '';
+    connBadge.innerHTML = `<span class="dot"></span><span class="conn-text">${online ? 'Online' : 'Offline'}</span>${pendingHtml}`;
+  }
+
+  window.addEventListener('online', () => {
+    updateConnBadge();
+    syncPendingEntries();
+  });
+  window.addEventListener('offline', updateConnBadge);
+
+  // Campus wifi often stays "connected" to the router while the actual
+  // internet link is down, so the browser's online/offline events don't
+  // always fire when connectivity truly returns. This periodic check is
+  // the safety net that catches that case.
+  setInterval(syncPendingEntries, 20000);
 
   // ---------- records ----------
   const fromField = document.getElementById('r-from');
@@ -1018,6 +1174,13 @@
       hideLoading();
     }
   }
+
+  // Surface anything left over from a previous offline session immediately,
+  // and try to flush it in case we're back online before the periodic
+  // sync check would otherwise run.
+  renderRetryBanner();
+  updateConnBadge();
+  syncPendingEntries();
 
   // Initial app bootstrap — frame this as loading the whole register,
   // not just the settings, since that's what it looks like to the user.

@@ -6,9 +6,9 @@
 <title>Annakshetra — Coupon Register</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --paper:#FAF7F1;
@@ -667,7 +667,21 @@
       method: 'POST',
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (parseErr) {
+      // The Apps Script URL returned something that isn't JSON — almost
+      // always an HTML page (a Google sign-in wall, or an error page)
+      // rather than your script's output. Surface that clearly instead
+      // of letting the browser's generic JSON-parse error show through.
+      throw new Error(
+        'Script URL did not return JSON (got HTML/text instead). ' +
+        'Check that the Apps Script deployment access is set to "Anyone" ' +
+        'and that you deployed a new version after your last edit.'
+      );
+    }
     if (data.error) throw new Error(data.error);
     return data;
   }
